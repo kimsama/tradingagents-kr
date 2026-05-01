@@ -222,6 +222,25 @@ def test_openai_malformed_json_raises(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_openai_api_key_mode_auth_json_gives_actionable_error(tmp_path, monkeypatch):
+    """Codex CLI in api-key mode stores {auth_mode: apikey, OPENAI_API_KEY: ...}.
+
+    We must detect this and tell the user to run `codex login` rather than
+    emitting a confusing 'missing tokens object' message.
+    """
+    monkeypatch.delenv("CODEX_AUTH_FILE", raising=False)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex"))
+    creds_dir = tmp_path / ".codex"
+    creds_dir.mkdir(parents=True, exist_ok=True)
+    (creds_dir / "auth.json").write_text(json.dumps({
+        "auth_mode": "apikey",
+        "OPENAI_API_KEY": "sk-test-not-real",
+    }))
+    with pytest.raises(OpenAIOAuthError, match="codex login"):
+        load_openai_credentials(home_dir=tmp_path)
+
+
+@pytest.mark.unit
 def test_openai_missing_tokens_block_raises(tmp_path, monkeypatch):
     monkeypatch.delenv("CODEX_AUTH_FILE", raising=False)
     codex_home = tmp_path / ".codex"

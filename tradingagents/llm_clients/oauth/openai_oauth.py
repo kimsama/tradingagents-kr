@@ -112,6 +112,15 @@ def _parse_last_refresh_ms(value) -> Optional[int]:
 def _parse_credentials(raw: dict, source_path: Path) -> OpenAIOAuthCredentials:
     tokens = raw.get("tokens")
     if not isinstance(tokens, dict):
+        # Codex CLI stores api-key-mode auth in the same auth.json under
+        # {"auth_mode": "apikey", "OPENAI_API_KEY": "..."}. Detect that
+        # specifically so the user knows what to do.
+        if raw.get("auth_mode") == "apikey" or "OPENAI_API_KEY" in raw:
+            raise OpenAIOAuthError(
+                f"{source_path}: Codex CLI is in api-key mode (no subscription "
+                "OAuth tokens). Run `codex login` and choose the ChatGPT "
+                "subscription option to enable OAuth, then retry."
+            )
         raise OpenAIOAuthError(
             f"{source_path}: missing 'tokens' object — file does not look like a Codex auth.json"
         )
