@@ -1,5 +1,5 @@
 import os
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from langchain_openai import ChatOpenAI
 
@@ -65,18 +65,33 @@ class OpenAIClient(BaseLLMClient):
         model: str,
         base_url: Optional[str] = None,
         provider: str = "openai",
+        *,
+        auth_mode: Literal["api_key", "oauth"] = "api_key",
         **kwargs,
     ):
         super().__init__(model, base_url, **kwargs)
         self.provider = provider.lower()
+        if auth_mode == "oauth" and self.provider != "openai":
+            raise ValueError(
+                f"auth_mode='oauth' is supported only for provider='openai', "
+                f"got provider='{self.provider}'."
+            )
+        self.auth_mode = auth_mode
 
     def get_llm(self) -> Any:
         """Return configured ChatOpenAI instance."""
         self.warn_if_unknown_model()
         llm_kwargs = {"model": self.model}
 
-        # Provider-specific base URL and auth
-        if self.provider in _PROVIDER_CONFIG:
+        if self.auth_mode == "oauth":
+            from .oauth import build_openai_http_client
+            from .oauth.openai_oauth import get_dummy_key
+            # Inject httpx.Client with ChatGPT-subscription bearer token.
+            # base_url is owned by the http_client; do not pass it through.
+            llm_kwargs["http_client"] = build_openai_http_client()
+            llm_kwargs.setdefault("api_key", get_dummy_key())
+        elif self.provider in _PROVIDER_CONFIG:
+            # Provider-specific base URL and auth
             base_url, api_key_env = _PROVIDER_CONFIG[self.provider]
             llm_kwargs["base_url"] = base_url
             if api_key_env:
@@ -91,11 +106,17 @@ class OpenAIClient(BaseLLMClient):
         # Forward user-provided kwargs
         for key in _PASSTHROUGH_KWARGS:
             if key in self.kwargs:
+                # In oauth mode, never let a stray API key from kwargs override
+                # the dummy placeholder — would re-enable api-key auth.
+                if self.auth_mode == "oauth" and key == "api_key":
+                    continue
                 llm_kwargs[key] = self.kwargs[key]
 
         # Native OpenAI: use Responses API for consistent behavior across
         # all model families. Third-party providers use Chat Completions.
-        if self.provider == "openai":
+        # OAuth mode falls back to Chat Completions (PRD-1.2 §8 open question
+        # #2: Codex tokens may not be accepted on /v1/responses).
+        if self.provider == "openai" and self.auth_mode != "oauth":
             llm_kwargs["use_responses_api"] = True
 
         return NormalizedChatOpenAI(**llm_kwargs)
