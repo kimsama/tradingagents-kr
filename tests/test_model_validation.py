@@ -23,6 +23,12 @@ class DummyLLMClient(BaseLLMClient):
 
 @pytest.mark.unit
 class ModelValidationTests(unittest.TestCase):
+    def test_anthropic_catalog_includes_captured_claude_cli_alias_targets(self):
+        models = set(get_known_models()["anthropic"])
+
+        self.assertIn("claude-sonnet-4-6", models)
+        self.assertIn("claude-opus-4-7", models)
+
     def test_cli_catalog_models_are_all_validator_approved(self):
         for provider, models in get_known_models().items():
             if provider in ("ollama", "openrouter"):

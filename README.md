@@ -157,6 +157,64 @@ Alternatively, copy `.env.example` to `.env` and fill in your keys:
 cp .env.example .env
 ```
 
+### Subscription OAuth (Claude Pro/Max, ChatGPT)
+
+If you already have a Claude Pro/Max or ChatGPT subscription, you can run TradingAgents against your subscription quota instead of paying per-token API charges. Each analysis round makes 30–50 LLM calls (analyst team + bull/bear debate + risk debate), so this saves real money.
+
+OAuth mode is supported for **Anthropic and OpenAI only**. All other providers (Google, xAI, DeepSeek, Qwen, GLM, OpenRouter, Azure, Ollama) keep using their existing API key paths.
+
+**1. Log in with the official CLI** (one-time, on the host where TradingAgents will run):
+
+```bash
+# Anthropic — installs/uses claude-cli, opens a browser for Pro/Max OAuth
+claude   # then follow the login prompt; tokens land in ~/.claude/credentials.json
+
+# OpenAI — installs/uses Codex CLI, OAuth via ChatGPT account
+codex login   # tokens land in ~/.codex/auth.json (must be auth_mode="chatgpt", not "apikey")
+```
+
+**2. Enable OAuth in `.env`:**
+
+```bash
+ANTHROPIC_AUTH_MODE=oauth   # api_key (default) | oauth
+OPENAI_AUTH_MODE=oauth      # api_key (default) | oauth
+```
+
+When a provider is in `oauth` mode the matching `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` may be left blank — credentials are read from the local CLI storage above.
+
+**3. Override credential paths** (optional — useful for Docker, isolated test envs):
+
+```bash
+export CLAUDE_CREDENTIALS_FILE=/path/to/credentials.json
+export CODEX_AUTH_FILE=/path/to/auth.json
+```
+
+**Programmatic usage:**
+
+```python
+config = DEFAULT_CONFIG.copy()
+config["llm_provider"] = "anthropic"
+config["deep_think_llm"] = "claude-opus-4-7"
+config["quick_think_llm"] = "claude-sonnet-4-6"
+config["anthropic_auth_mode"] = "oauth"   # overrides ANTHROPIC_AUTH_MODE env
+# config["openai_auth_mode"] = "oauth"    # same idea for OpenAI
+```
+
+**Token expiry.** OAuth tokens are not auto-refreshed — if a token is expired the run fails fast with an actionable error (`run claude` / `run codex login`). Re-authenticate with the relevant CLI and retry. Background refresh is tracked in PRD-1.3.
+
+**Docker.** When running with `docker compose`, mount your credentials read-only so the container can see them:
+
+```yaml
+# docker-compose.override.yml
+services:
+  tradingagents:
+    volumes:
+      - ~/.claude:/root/.claude:ro      # Anthropic OAuth
+      - ~/.codex:/root/.codex:ro        # OpenAI OAuth
+```
+
+**Limitations.** Single-user / single-machine only. You are bound by your subscription's rate limits — for Claude Pro/Max this is a 5-hour rolling window, so a heavy run that exhausts the window will return `429 rate_limit_error` (not an auth failure) until it resets. Claude Code 2.1.126 model capture evidence is tracked in [docs/anthropic-oauth-model-capture-2026-05-02.md](docs/anthropic-oauth-model-capture-2026-05-02.md).
+
 ### CLI Usage
 
 Launch the interactive CLI:
