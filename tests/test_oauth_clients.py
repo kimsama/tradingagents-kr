@@ -405,6 +405,27 @@ def test_openai_dummy_key_is_obviously_fake():
     assert "placeholder" in openai_oauth.get_dummy_key()
 
 
+@pytest.mark.unit
+def test_openai_credentials_repr_redacts_tokens(tmp_path):
+    creds = OpenAIOAuthCredentials(
+        access_token="access-secret",
+        refresh_token="refresh-secret",
+        expires_at_ms=_ms_from_now(3600),
+        account_id="acc-123",
+        id_token="id-secret",
+        source_path=tmp_path / "auth.json",
+    )
+
+    text = repr(creds)
+
+    assert "access-secret" not in text
+    assert "refresh-secret" not in text
+    assert "id-secret" not in text
+    assert "access_token='<redacted>'" in text
+    assert "refresh_token='<redacted>'" in text
+    assert "id_token='<redacted>'" in text
+
+
 # --- Factory wiring (PRD-1.2 §6 step 4) -------------------------------------
 #
 # Pin the contract between create_llm_client(...) and the per-provider

@@ -62,6 +62,18 @@ class OpenAIOAuthCredentials:
     def seconds_until_expiry(self) -> int:
         return max(0, (self.expires_at_ms - _now_ms()) // 1000)
 
+    def __repr__(self) -> str:
+        id_token = "'<redacted>'" if self.id_token else "None"
+        return (
+            f"{type(self).__name__}("
+            "access_token='<redacted>', "
+            "refresh_token='<redacted>', "
+            f"expires_at_ms={self.expires_at_ms!r}, "
+            f"account_id={self.account_id!r}, "
+            f"id_token={id_token}, "
+            f"source_path={self.source_path!r})"
+        )
+
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
