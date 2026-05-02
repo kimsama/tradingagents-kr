@@ -38,11 +38,14 @@ def _ms_from_now(seconds: int) -> int:
     return int((time.time() + seconds) * 1000)
 
 
-def _make_jwt(exp_seconds_from_now: int) -> str:
+def _make_jwt(exp_seconds_from_now: int, *, scopes: list[str] | None = None) -> str:
     """Minimal unsigned JWT with the requested `exp` claim."""
     header = base64.urlsafe_b64encode(b'{"alg":"none"}').rstrip(b"=").decode()
+    payload_obj = {"exp": int(time.time()) + exp_seconds_from_now}
+    if scopes is not None:
+        payload_obj["scp"] = scopes
     payload = base64.urlsafe_b64encode(
-        json.dumps({"exp": int(time.time()) + exp_seconds_from_now}).encode()
+        json.dumps(payload_obj).encode()
     ).rstrip(b"=").decode()
     return f"{header}.{payload}.sig"
 
@@ -311,6 +314,22 @@ def test_openai_jwt_expiry_decoded(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_openai_jwt_without_model_request_scope_raises_actionable_error(tmp_path, monkeypatch):
+    monkeypatch.delenv("CODEX_AUTH_FILE", raising=False)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex"))
+    _write_codex_creds(
+        tmp_path,
+        access_token=_make_jwt(
+            3600,
+            scopes=["openid", "profile", "email", "offline_access"],
+        ),
+    )
+
+    with pytest.raises(OpenAIOAuthError, match="model.request"):
+        load_openai_credentials()
+
+
+@pytest.mark.unit
 def test_openai_non_jwt_falls_back_to_last_refresh(tmp_path, monkeypatch):
     monkeypatch.delenv("CODEX_AUTH_FILE", raising=False)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex"))
@@ -434,7 +453,7 @@ def test_openai_credentials_repr_redacts_tokens(tmp_path):
 # api_key path.
 
 from tradingagents.llm_clients.factory import create_llm_client, _resolve_auth_mode
-from tradingagents.llm_clients.anthropic_client import AnthropicClient
+from tradingagents.llm_clients.anthropic_client import AnthropicClient, NormalizedChatAnthropic
 from tradingagents.llm_clients.openai_client import OpenAIClient
 
 
@@ -612,6 +631,102 @@ def test_anthropic_api_key_mode_custom_http_clients_reach_sdk(monkeypatch):
     finally:
         sync_client.close()
         asyncio.run(async_client.aclose())
+
+
+@pytest.mark.unit
+def test_anthropic_effort_kwarg_not_sent_to_api(monkeypatch):
+    """Anthropic rejects the OpenAI-style `effort` request parameter."""
+    from langchain_core.messages import HumanMessage
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
+    client = AnthropicClient(
+        model="claude-opus-4-7",
+        auth_mode="api_key",
+        effort="high",
+    )
+    llm = client.get_llm()
+    payload = llm._get_request_payload([HumanMessage(content="hello")])
+
+    assert "effort" not in payload
+    assert "effort" not in payload.get("output_config", {})
+
+
+@pytest.mark.unit
+def test_anthropic_default_max_tokens_is_capped(monkeypatch):
+    """LangChain's Claude defaults are huge and can trigger rate limits."""
+    from langchain_core.messages import HumanMessage
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
+    client = AnthropicClient(model="claude-sonnet-4-5", auth_mode="api_key")
+    llm = client.get_llm()
+    payload = llm._get_request_payload([HumanMessage(content="hello")])
+
+    assert payload["max_tokens"] == 4096
+
+
+@pytest.mark.unit
+def test_anthropic_explicit_max_tokens_is_preserved(monkeypatch):
+    from langchain_core.messages import HumanMessage
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
+    client = AnthropicClient(
+        model="claude-sonnet-4-5",
+        auth_mode="api_key",
+        max_tokens=8192,
+    )
+    llm = client.get_llm()
+    payload = llm._get_request_payload([HumanMessage(content="hello")])
+
+    assert payload["max_tokens"] == 8192
+
+
+@pytest.mark.unit
+def test_anthropic_default_sdk_max_retries_is_disabled(monkeypatch):
+    """The client has its own visible rate-limit backoff; avoid hidden SDK retries."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
+    client = AnthropicClient(model="claude-sonnet-4-5", auth_mode="api_key")
+    llm = client.get_llm()
+
+    assert llm.max_retries == 0
+
+
+@pytest.mark.unit
+def test_anthropic_explicit_max_retries_is_preserved(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
+    client = AnthropicClient(
+        model="claude-sonnet-4-5",
+        auth_mode="api_key",
+        max_retries=4,
+    )
+    llm = client.get_llm()
+
+    assert llm.max_retries == 4
+
+
+@pytest.mark.unit
+def test_anthropic_invoke_retries_rate_limit_once(monkeypatch):
+    from langchain_anthropic import ChatAnthropic
+    from langchain_core.messages import AIMessage
+
+    calls = []
+
+    def flaky_invoke(self, input, config=None, **kwargs):
+        calls.append(input)
+        if len(calls) == 1:
+            exc = RuntimeError("rate_limit_error")
+            exc.status_code = 429
+            raise exc
+        return AIMessage(content="ok")
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
+    monkeypatch.setenv("ANTHROPIC_RATE_LIMIT_RETRY_SECONDS", "0")
+    monkeypatch.setattr(ChatAnthropic, "invoke", flaky_invoke)
+
+    llm = NormalizedChatAnthropic(model="claude-sonnet-4-5", max_tokens=4096)
+    response = llm.invoke("hello")
+
+    assert response.content == "ok"
+    assert len(calls) == 2
 
 
 @pytest.mark.unit

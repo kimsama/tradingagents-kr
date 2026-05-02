@@ -90,8 +90,8 @@ def _resolve_auth_path(home_dir: Optional[Path] = None) -> Path:
     return base / _AUTH_FILENAME
 
 
-def _decode_jwt_exp_ms(token: str) -> Optional[int]:
-    """Best-effort JWT `exp` extraction. Returns None if the token isn't a JWT."""
+def _decode_jwt_payload(token: str) -> Optional[dict]:
+    """Best-effort JWT payload extraction. Returns None if the token isn't a JWT."""
     parts = token.split(".")
     if len(parts) < 2:
         return None
@@ -103,10 +103,35 @@ def _decode_jwt_exp_ms(token: str) -> Optional[int]:
         payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _decode_jwt_exp_ms(token: str) -> Optional[int]:
+    """Best-effort JWT `exp` extraction. Returns None if the token isn't a JWT."""
+    payload = _decode_jwt_payload(token)
+    if payload is None:
+        return None
     exp = payload.get("exp")
     if isinstance(exp, (int, float)) and exp > 0:
         return int(exp * 1000)
     return None
+
+
+def _validate_model_request_scope(token: str, source_path: Path) -> None:
+    payload = _decode_jwt_payload(token)
+    if payload is None:
+        return
+    scopes = payload.get("scp")
+    if not isinstance(scopes, list):
+        return
+    if "model.request" in scopes:
+        return
+    raise OpenAIOAuthError(
+        f"{source_path}: Codex ChatGPT token does not include the OpenAI API "
+        "'model.request' scope required for model calls. Set "
+        "OPENAI_AUTH_MODE=api_key and provide an OPENAI_API_KEY with model "
+        "request permission, then retry."
+    )
 
 
 def _parse_last_refresh_ms(value) -> Optional[int]:
@@ -144,6 +169,7 @@ def _parse_credentials(raw: dict, source_path: Path) -> OpenAIOAuthCredentials:
         raise OpenAIOAuthError(f"{source_path}: tokens.access_token is missing or empty")
     if not isinstance(refresh_token, str) or not refresh_token:
         raise OpenAIOAuthError(f"{source_path}: tokens.refresh_token is missing or empty")
+    _validate_model_request_scope(access_token, source_path)
 
     expires_at = _decode_jwt_exp_ms(access_token)
     if expires_at is None:

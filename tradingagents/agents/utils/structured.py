@@ -23,6 +23,8 @@ from typing import Any, Callable, Optional, TypeVar
 
 from pydantic import BaseModel
 
+from tradingagents.rate_limit import is_rate_limit_error
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
@@ -64,6 +66,13 @@ def invoke_structured_or_freetext(
             result = structured_llm.invoke(prompt)
             return render(result)
         except Exception as exc:
+            if is_rate_limit_error(exc):
+                logger.warning(
+                    "%s: structured-output invocation hit a rate limit (%s); "
+                    "not retrying immediately as free text",
+                    agent_name, exc,
+                )
+                raise
             logger.warning(
                 "%s: structured-output invocation failed (%s); retrying once as free text",
                 agent_name, exc,

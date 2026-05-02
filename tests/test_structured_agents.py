@@ -21,6 +21,11 @@ from tradingagents.agents.schemas import (
     render_trader_proposal,
 )
 from tradingagents.agents.trader.trader import create_trader
+from tradingagents.agents.utils.structured import invoke_structured_or_freetext
+
+
+class FakeRateLimitError(Exception):
+    status_code = 429
 
 
 # ---------------------------------------------------------------------------
@@ -230,3 +235,23 @@ class TestResearchManagerAgent:
         rm = create_research_manager(llm)
         result = rm(_make_rm_state())
         assert result["investment_plan"] == plain_response
+
+
+@pytest.mark.unit
+def test_structured_rate_limit_does_not_immediately_fallback_to_plain_text():
+    """A 429 fallback sends a second full prompt and worsens quota pressure."""
+    structured_llm = MagicMock()
+    structured_llm.invoke.side_effect = FakeRateLimitError("rate_limit_error")
+    plain_llm = MagicMock()
+    plain_llm.invoke.return_value = MagicMock(content="fallback")
+
+    with pytest.raises(FakeRateLimitError):
+        invoke_structured_or_freetext(
+            structured_llm,
+            plain_llm,
+            "prompt",
+            lambda result: str(result),
+            "Research Manager",
+        )
+
+    plain_llm.invoke.assert_not_called()

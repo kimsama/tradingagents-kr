@@ -1,4 +1,7 @@
 from functools import cached_property
+import logging
+import os
+import time
 from typing import Any, Literal, Optional
 
 import anthropic
@@ -7,11 +10,35 @@ from pydantic import PrivateAttr
 
 from .base_client import BaseLLMClient, normalize_content
 from .validators import validate_model
+from tradingagents.rate_limit import is_rate_limit_error, retry_after_seconds
+
+logger = logging.getLogger(__name__)
 
 _PASSTHROUGH_KWARGS = (
     "timeout", "max_retries", "api_key", "max_tokens",
-    "callbacks", "http_client", "http_async_client", "effort",
+    "callbacks", "http_client", "http_async_client",
 )
+_DEFAULT_MAX_TOKENS = 4096
+_DEFAULT_RATE_LIMIT_RETRY_SECONDS = (30.0, 90.0)
+
+
+def _rate_limit_retry_delays() -> tuple[float, ...]:
+    raw = os.getenv("ANTHROPIC_RATE_LIMIT_RETRY_SECONDS")
+    if raw is None:
+        return _DEFAULT_RATE_LIMIT_RETRY_SECONDS
+
+    delays = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            delay = float(item)
+        except ValueError:
+            continue
+        if delay >= 0:
+            delays.append(delay)
+    return tuple(delays)
 
 
 class NormalizedChatAnthropic(ChatAnthropic):
@@ -33,7 +60,27 @@ class NormalizedChatAnthropic(ChatAnthropic):
     _oauth_http_async_client: Optional[Any] = PrivateAttr(default=None)
 
     def invoke(self, input, config=None, **kwargs):
-        return normalize_content(super().invoke(input, config, **kwargs))
+        delays = _rate_limit_retry_delays()
+        for attempt in range(len(delays) + 1):
+            try:
+                return normalize_content(super().invoke(input, config, **kwargs))
+            except Exception as exc:
+                if not is_rate_limit_error(exc) or attempt >= len(delays):
+                    raise
+
+                delay = retry_after_seconds(exc)
+                if delay is None:
+                    delay = delays[attempt]
+                delay = min(delay, 300.0)
+                logger.warning(
+                    "Anthropic rate limit encountered; retrying in %.1fs (%d/%d)",
+                    delay,
+                    attempt + 1,
+                    len(delays),
+                )
+                time.sleep(delay)
+
+        raise RuntimeError("unreachable Anthropic retry state")
 
     def _get_client_params(self) -> dict[str, Any]:
         client_params = getattr(self, "_client_params", None)
@@ -116,6 +163,9 @@ class AnthropicClient(BaseLLMClient):
                         injected_http_async_client = self.kwargs[key]
                     continue
                 llm_kwargs[key] = self.kwargs[key]
+
+        llm_kwargs.setdefault("max_tokens", _DEFAULT_MAX_TOKENS)
+        llm_kwargs.setdefault("max_retries", 0)
 
         llm = NormalizedChatAnthropic(**llm_kwargs)
         if injected_http_client is not None:
