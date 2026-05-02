@@ -50,7 +50,7 @@
 
 <div align="center">
 
-🚀 [TradingAgents](#tradingagents-framework) | ⚡ [Installation & CLI](#installation-and-cli) | 📘 [Korean User Manual](docs/USER_MANUAL_KO.md) | 🎬 [Demo](https://www.youtube.com/watch?v=90gr5lwjIho) | 📦 [Package Usage](#tradingagents-package) | 🤝 [Contributing](#contributing) | 📄 [Citation](#citation)
+🚀 [TradingAgents](#tradingagents-framework) | ⚡ [Installation & CLI](#installation-and-cli) | 📘 [Korean User Manual](docs/10.USER_MANUAL_KO.md) | 🎬 [Demo](https://www.youtube.com/watch?v=90gr5lwjIho) | 📦 [Package Usage](#tradingagents-package) | 🤝 [Contributing](#contributing) | 📄 [Citation](#citation)
 
 </div>
 
@@ -319,7 +319,7 @@ We welcome contributions from the community! Whether it's fixing a bug, improvin
 
 Past contributions, including code, design feedback, and bug reports, are credited per release in [`CHANGELOG.md`](CHANGELOG.md).
 
-When changing CLI flow, Docker commands, environment variables, or report file paths, update [`docs/USER_MANUAL_KO.md`](docs/USER_MANUAL_KO.md) in the same PR so the Korean operations guide does not drift from the code.
+When changing CLI flow, Docker commands, environment variables, or report file paths, update [`docs/10.USER_MANUAL_KO.md`](docs/10.USER_MANUAL_KO.md) in the same PR so the Korean operations guide does not drift from the code.
 
 ## Citation
 
