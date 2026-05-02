@@ -82,16 +82,21 @@ class TradingAgentsGraph:
         if self.callbacks:
             llm_kwargs["callbacks"] = self.callbacks
 
+        provider = self.config["llm_provider"].lower()
+        auth_mode = self.config.get(f"{provider}_auth_mode")
+
         deep_client = create_llm_client(
             provider=self.config["llm_provider"],
             model=self.config["deep_think_llm"],
             base_url=self.config.get("backend_url"),
+            auth_mode=auth_mode,
             **llm_kwargs,
         )
         quick_client = create_llm_client(
             provider=self.config["llm_provider"],
             model=self.config["quick_think_llm"],
             base_url=self.config.get("backend_url"),
+            auth_mode=auth_mode,
             **llm_kwargs,
         )
 

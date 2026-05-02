@@ -15,6 +15,11 @@ DEFAULT_CONFIG = {
     "llm_provider": "openai",
     "deep_think_llm": "gpt-5.4",
     "quick_think_llm": "gpt-5.4-mini",
+    # Per-provider auth mode for subscription OAuth (PRD-1.2). Values:
+    # "api_key" (default), "oauth", or None to defer to <PROVIDER>_AUTH_MODE
+    # env var (then "api_key"). Only "anthropic" and "openai" support OAuth.
+    "anthropic_auth_mode": None,
+    "openai_auth_mode": None,
     # When None, each provider's client falls back to its own default endpoint
     # (api.openai.com for OpenAI, generativelanguage.googleapis.com for Gemini, ...).
     # The CLI overrides this per provider when the user picks one. Keeping a
