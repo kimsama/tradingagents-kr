@@ -9,6 +9,7 @@ Covers required scenarios:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import time
@@ -22,7 +23,9 @@ from tradingagents.llm_clients.oauth import (
     OpenAIOAuthCredentials,
     OpenAIOAuthError,
     build_anthropic_http_client,
+    build_anthropic_http_client_async,
     build_openai_http_client,
+    build_openai_http_client_async,
     load_anthropic_credentials,
     load_openai_credentials,
 )
@@ -151,9 +154,8 @@ def test_anthropic_expired_credential_flag(tmp_path, monkeypatch):
 def test_anthropic_expired_token_blocks_request(tmp_path, monkeypatch):
     monkeypatch.delenv("CLAUDE_CREDENTIALS_FILE", raising=False)
     _write_claude_creds(tmp_path, expires_at_ms=_ms_from_now(-60))
-    client = build_anthropic_http_client(home_dir=tmp_path)
     transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"ok": True}))
-    client._transport = transport
+    client = build_anthropic_http_client(home_dir=tmp_path, transport=transport)
     with pytest.raises(AnthropicOAuthError, match="expired"):
         client.get("/v1/messages")
     client.close()
@@ -176,8 +178,8 @@ def test_anthropic_required_headers_injected(tmp_path, monkeypatch):
         home_dir=tmp_path,
         extra_betas=["fine-grained-tool-streaming-2025-05-14"],
         user_agent="claude-cli/9.9.9",
+        transport=httpx.MockTransport(handler),
     )
-    client._transport = httpx.MockTransport(handler)
     # Prime an outgoing x-api-key to verify it gets stripped.
     client.headers["x-api-key"] = "should-be-removed"
     client.get("/v1/messages")
@@ -198,6 +200,51 @@ def test_anthropic_required_headers_injected(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_anthropic_dummy_key_is_obviously_fake():
     assert "placeholder" in anthropic_oauth.get_dummy_key()
+
+
+@pytest.mark.unit
+def test_anthropic_credentials_repr_redacts_tokens(tmp_path):
+    creds = AnthropicOAuthCredentials(
+        access_token="sk-ant-oat-secret",
+        refresh_token="rt-secret",
+        expires_at_ms=_ms_from_now(3600),
+        source_path=tmp_path / ".credentials.json",
+    )
+
+    text = repr(creds)
+
+    assert "sk-ant-oat-secret" not in text
+    assert "rt-secret" not in text
+    assert "access_token='<redacted>'" in text
+    assert "refresh_token='<redacted>'" in text
+
+
+@pytest.mark.unit
+def test_anthropic_async_required_headers_injected(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CREDENTIALS_FILE", raising=False)
+    _write_claude_creds(tmp_path, expires_at_ms=_ms_from_now(3600))
+
+    captured = {}
+
+    async def run():
+        async def handler(request: httpx.Request) -> httpx.Response:
+            captured["headers"] = dict(request.headers)
+            return httpx.Response(200, json={"ok": True})
+
+        client = build_anthropic_http_client_async(
+            home_dir=tmp_path,
+            transport=httpx.MockTransport(handler),
+        )
+        client.headers["x-api-key"] = "should-be-removed"
+        await client.get("/v1/messages")
+        await client.aclose()
+
+    asyncio.run(run())
+
+    h = captured["headers"]
+    assert h["authorization"] == "Bearer sk-ant-oat-test"
+    assert h["anthropic-beta"] == "claude-code-20250219,oauth-2025-04-20"
+    assert "x-api-key" not in h
 
 
 # --- OpenAI / Codex: missing & malformed ------------------------------------
@@ -278,8 +325,10 @@ def test_openai_expired_token_blocks_request(tmp_path, monkeypatch):
     monkeypatch.delenv("CODEX_AUTH_FILE", raising=False)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex"))
     _write_codex_creds(tmp_path, jwt_exp_seconds=-60)
-    client = build_openai_http_client(home_dir=tmp_path)
-    client._transport = httpx.MockTransport(lambda req: httpx.Response(200, json={"ok": True}))
+    client = build_openai_http_client(
+        home_dir=tmp_path,
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, json={"ok": True})),
+    )
     with pytest.raises(OpenAIOAuthError, match="expired"):
         client.get("/responses")
     client.close()
@@ -315,10 +364,36 @@ def test_openai_required_headers_injected(tmp_path, monkeypatch):
         captured["headers"] = dict(request.headers)
         return httpx.Response(200, json={"ok": True})
 
-    client = build_openai_http_client(home_dir=tmp_path)
-    client._transport = httpx.MockTransport(handler)
+    client = build_openai_http_client(home_dir=tmp_path, transport=httpx.MockTransport(handler))
     client.get("/responses")
     client.close()
+
+    h = captured["headers"]
+    assert h["authorization"].startswith("Bearer ")
+    assert h["chatgpt-account-id"] == "acc-123"
+
+
+@pytest.mark.unit
+def test_openai_async_required_headers_injected(tmp_path, monkeypatch):
+    monkeypatch.delenv("CODEX_AUTH_FILE", raising=False)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex"))
+    _write_codex_creds(tmp_path, jwt_exp_seconds=3600)
+
+    captured = {}
+
+    async def run():
+        async def handler(request: httpx.Request) -> httpx.Response:
+            captured["headers"] = dict(request.headers)
+            return httpx.Response(200, json={"ok": True})
+
+        client = build_openai_http_client_async(
+            home_dir=tmp_path,
+            transport=httpx.MockTransport(handler),
+        )
+        await client.get("/responses")
+        await client.aclose()
+
+    asyncio.run(run())
 
     h = captured["headers"]
     assert h["authorization"].startswith("Bearer ")
@@ -464,6 +539,25 @@ def test_anthropic_oauth_http_client_reaches_sdk(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_anthropic_oauth_async_http_client_reaches_sdk(tmp_path, monkeypatch):
+    """Regression: async Anthropic SDK client must use OUR OAuth AsyncClient."""
+    monkeypatch.delenv("CLAUDE_CREDENTIALS_FILE", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_claude_creds(tmp_path, expires_at_ms=_ms_from_now(3600))
+
+    client = create_llm_client(
+        provider="anthropic", model="claude-opus-4-7", auth_mode="oauth",
+    )
+    llm = client.get_llm()
+    sdk_client = llm._async_client
+    underlying_httpx = getattr(sdk_client, "_client", None)
+    assert underlying_httpx is llm._oauth_http_async_client, (
+        "OAuth async httpx client was not propagated to the Anthropic SDK — "
+        "async langchain calls would silently use API-key auth."
+    )
+
+
+@pytest.mark.unit
 def test_anthropic_api_key_mode_uses_default_sdk_client(monkeypatch):
     """Regression: api_key mode must NOT trigger the OAuth http_client path."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
@@ -474,6 +568,29 @@ def test_anthropic_api_key_mode_uses_default_sdk_client(monkeypatch):
     assert llm._oauth_http_client is None
     # _client should construct via langchain's default helper, not crash.
     assert llm._client is not None
+
+
+@pytest.mark.unit
+def test_anthropic_api_key_mode_custom_http_clients_reach_sdk(monkeypatch):
+    """Explicit Anthropic http clients must not be silently discarded."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
+    sync_client = httpx.Client()
+    async_client = httpx.AsyncClient()
+
+    try:
+        client = AnthropicClient(
+            model="claude-opus-4-7",
+            auth_mode="api_key",
+            http_client=sync_client,
+            http_async_client=async_client,
+        )
+        llm = client.get_llm()
+
+        assert getattr(llm._client, "_client", None) is sync_client
+        assert getattr(llm._async_client, "_client", None) is async_client
+    finally:
+        sync_client.close()
+        asyncio.run(async_client.aclose())
 
 
 @pytest.mark.unit
@@ -492,6 +609,7 @@ def test_factory_openai_oauth_disables_responses_api(tmp_path, monkeypatch):
     )
     llm = client.get_llm()
     assert getattr(llm, "use_responses_api", False) is not True
+    assert llm.http_async_client is not None
 
 
 @pytest.mark.unit

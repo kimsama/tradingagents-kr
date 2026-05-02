@@ -84,11 +84,12 @@ class OpenAIClient(BaseLLMClient):
         llm_kwargs = {"model": self.model}
 
         if self.auth_mode == "oauth":
-            from .oauth import build_openai_http_client
+            from .oauth import build_openai_http_client, build_openai_http_client_async
             from .oauth.openai_oauth import get_dummy_key
-            # Inject httpx.Client with ChatGPT-subscription bearer token.
+            # Inject httpx clients with ChatGPT-subscription bearer token.
             # base_url is owned by the http_client; do not pass it through.
             llm_kwargs["http_client"] = build_openai_http_client()
+            llm_kwargs["http_async_client"] = build_openai_http_client_async()
             llm_kwargs.setdefault("api_key", get_dummy_key())
         elif self.provider in _PROVIDER_CONFIG:
             # Provider-specific base URL and auth
@@ -109,6 +110,8 @@ class OpenAIClient(BaseLLMClient):
                 # In oauth mode, never let a stray API key from kwargs override
                 # the dummy placeholder — would re-enable api-key auth.
                 if self.auth_mode == "oauth" and key == "api_key":
+                    continue
+                if self.auth_mode == "oauth" and key in ("http_client", "http_async_client"):
                     continue
                 llm_kwargs[key] = self.kwargs[key]
 

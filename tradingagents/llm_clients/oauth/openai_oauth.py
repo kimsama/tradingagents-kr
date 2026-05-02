@@ -87,6 +87,7 @@ def _decode_jwt_exp_ms(token: str) -> Optional[int]:
         payload_raw = parts[1]
         # urlsafe_b64decode requires correct padding
         padded = payload_raw + "=" * (-len(payload_raw) % 4)
+        # No signature verification: this is a UX fail-fast hint; the server is authoritative.
         payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         return None
@@ -135,6 +136,7 @@ def _parse_credentials(raw: dict, source_path: Path) -> OpenAIOAuthCredentials:
     expires_at = _decode_jwt_exp_ms(access_token)
     if expires_at is None:
         last_refresh = _parse_last_refresh_ms(raw.get("last_refresh"))
+        # Heuristic: prefer attempting the call over blocking; the server will 401 if stale.
         base = last_refresh if last_refresh is not None else _now_ms()
         expires_at = base + _FALLBACK_TTL_S * 1000
 
@@ -204,6 +206,7 @@ class _BearerAuth(httpx.Auth):
                 f"{(_now_ms() - self._credentials.expires_at_ms) // 1000}s ago. "
                 "Run `codex login` to refresh, then retry."
             )
+        # Defensive: openai-python does not set api-key, but mirror Anthropic's strip pattern.
         request.headers.pop("api-key", None)
         for k, v in self._headers.items():
             request.headers[k] = v
@@ -216,6 +219,7 @@ def build_http_client(
     base_url: str = "https://api.openai.com/v1",
     timeout: float = 600.0,
     home_dir: Optional[Path] = None,
+    transport: Optional[httpx.BaseTransport] = None,
 ) -> httpx.Client:
     """Build an `httpx.Client` configured for OpenAI OAuth-mode requests."""
     creds = credentials or load_credentials(home_dir=home_dir)
@@ -224,4 +228,24 @@ def build_http_client(
         base_url=base_url,
         timeout=timeout,
         auth=_BearerAuth(headers, creds),
+        transport=transport,
+    )
+
+
+def build_async_http_client(
+    credentials: Optional[OpenAIOAuthCredentials] = None,
+    *,
+    base_url: str = "https://api.openai.com/v1",
+    timeout: float = 600.0,
+    home_dir: Optional[Path] = None,
+    transport: Optional[httpx.AsyncBaseTransport] = None,
+) -> httpx.AsyncClient:
+    """Build an async `httpx.AsyncClient` configured for OpenAI OAuth-mode requests."""
+    creds = credentials or load_credentials(home_dir=home_dir)
+    headers = _build_headers(creds)
+    return httpx.AsyncClient(
+        base_url=base_url,
+        timeout=timeout,
+        auth=_BearerAuth(headers, creds),
+        transport=transport,
     )

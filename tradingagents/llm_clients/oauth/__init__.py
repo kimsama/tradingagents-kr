@@ -12,12 +12,14 @@ The token managers here only read.
 from .anthropic_oauth import (
     AnthropicOAuthError,
     AnthropicOAuthCredentials,
+    build_async_http_client as build_anthropic_http_client_async,
     build_http_client as build_anthropic_http_client,
     load_credentials as load_anthropic_credentials,
 )
 from .openai_oauth import (
     OpenAIOAuthError,
     OpenAIOAuthCredentials,
+    build_async_http_client as build_openai_http_client_async,
     build_http_client as build_openai_http_client,
     load_credentials as load_openai_credentials,
 )
@@ -26,9 +28,11 @@ __all__ = [
     "AnthropicOAuthError",
     "AnthropicOAuthCredentials",
     "build_anthropic_http_client",
+    "build_anthropic_http_client_async",
     "load_anthropic_credentials",
     "OpenAIOAuthError",
     "OpenAIOAuthCredentials",
     "build_openai_http_client",
+    "build_openai_http_client_async",
     "load_openai_credentials",
 ]

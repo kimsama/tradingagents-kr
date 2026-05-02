@@ -63,6 +63,16 @@ class AnthropicOAuthCredentials:
     def seconds_until_expiry(self) -> int:
         return max(0, (self.expires_at_ms - _now_ms()) // 1000)
 
+    def __repr__(self) -> str:
+        refresh_token = "'<redacted>'" if self.refresh_token else "None"
+        return (
+            f"{type(self).__name__}("
+            "access_token='<redacted>', "
+            f"refresh_token={refresh_token}, "
+            f"expires_at_ms={self.expires_at_ms!r}, "
+            f"source_path={self.source_path!r})"
+        )
+
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
@@ -207,6 +217,7 @@ def build_http_client(
     user_agent: Optional[str] = None,
     timeout: float = 600.0,
     home_dir: Optional[Path] = None,
+    transport: Optional[httpx.BaseTransport] = None,
 ) -> httpx.Client:
     """Build an `httpx.Client` configured for Anthropic OAuth-mode requests.
 
@@ -219,4 +230,26 @@ def build_http_client(
         base_url=base_url,
         timeout=timeout,
         auth=_StripApiKeyAuth(headers, creds),
+        transport=transport,
+    )
+
+
+def build_async_http_client(
+    credentials: Optional[AnthropicOAuthCredentials] = None,
+    *,
+    base_url: str = "https://api.anthropic.com",
+    extra_betas: Iterable[str] = (),
+    user_agent: Optional[str] = None,
+    timeout: float = 600.0,
+    home_dir: Optional[Path] = None,
+    transport: Optional[httpx.AsyncBaseTransport] = None,
+) -> httpx.AsyncClient:
+    """Build an async `httpx.AsyncClient` configured for Anthropic OAuth."""
+    creds = credentials or load_credentials(home_dir=home_dir)
+    headers = _build_headers(creds, extra_betas=extra_betas, user_agent=user_agent)
+    return httpx.AsyncClient(
+        base_url=base_url,
+        timeout=timeout,
+        auth=_StripApiKeyAuth(headers, creds),
+        transport=transport,
     )
