@@ -108,7 +108,7 @@ docker run -it -d --name tradingagents-test \
   -e OPENAI_AUTH_MODE=api_key \
   -e OPENAI_API_KEY \
   -v tradingagents_data:/home/appuser/.tradingagents \
-  -v /home/kimsama/.codex:/home/appuser/.codex:ro \
+  -v ${HOME}/.codex:/home/appuser/.codex:ro \
   tradingagents-kr-tradingagents
 
 docker attach tradingagents-test
@@ -123,8 +123,8 @@ docker run -it -d --name tradingagents-test \
   -e ANTHROPIC_AUTH_MODE=oauth \
   -e OPENAI_AUTH_MODE=oauth \
   -v tradingagents_data:/home/appuser/.tradingagents \
-  -v /home/kimsama/.claude:/home/appuser/.claude:ro \
-  -v /home/kimsama/.codex:/home/appuser/.codex:ro \
+  -v ${HOME}/.claude:/home/appuser/.claude:ro \
+  -v ${HOME}/.codex:/home/appuser/.codex:ro \
   tradingagents-kr-tradingagents
 
 docker attach tradingagents-test
@@ -406,7 +406,7 @@ docker run -it -d --name tradingagents-test \
   -e OPENAI_AUTH_MODE=api_key \
   -e OPENAI_API_KEY \
   -v tradingagents_data:/home/appuser/.tradingagents \
-  -v /home/kimsama/.codex:/home/appuser/.codex:ro \
+  -v ${HOME}/.codex:/home/appuser/.codex:ro \
   tradingagents-kr-tradingagents
 ```
 
@@ -433,7 +433,7 @@ codex login
 docker run -it -d --name tradingagents-test \
   -e OPENAI_AUTH_MODE=oauth \
   -v tradingagents_data:/home/appuser/.tradingagents \
-  -v /home/kimsama/.codex:/home/appuser/.codex:ro \
+  -v ${HOME}/.codex:/home/appuser/.codex:ro \
   tradingagents-kr-tradingagents
 ```
 
@@ -469,7 +469,7 @@ docker rm -f tradingagents-test
 docker run -it -d --name tradingagents-test \
   -e ANTHROPIC_AUTH_MODE=oauth \
   -v tradingagents_data:/home/appuser/.tradingagents \
-  -v /home/kimsama/.claude:/home/appuser/.claude:ro \
+  -v ${HOME}/.claude:/home/appuser/.claude:ro \
   tradingagents-kr-tradingagents
 ```
 

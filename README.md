@@ -319,6 +319,8 @@ We welcome contributions from the community! Whether it's fixing a bug, improvin
 
 Past contributions, including code, design feedback, and bug reports, are credited per release in [`CHANGELOG.md`](CHANGELOG.md).
 
+When changing CLI flow, Docker commands, environment variables, or report file paths, update [`docs/USER_MANUAL_KO.md`](docs/USER_MANUAL_KO.md) in the same PR so the Korean operations guide does not drift from the code.
+
 ## Citation
 
 Please reference our work if you find *TradingAgents* provides you with some help :)

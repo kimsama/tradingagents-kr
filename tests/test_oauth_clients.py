@@ -38,12 +38,19 @@ def _ms_from_now(seconds: int) -> int:
     return int((time.time() + seconds) * 1000)
 
 
-def _make_jwt(exp_seconds_from_now: int, *, scopes: list[str] | None = None) -> str:
+def _make_jwt(
+    exp_seconds_from_now: int,
+    *,
+    scopes: list[str] | None = None,
+    scope: str | None = None,
+) -> str:
     """Minimal unsigned JWT with the requested `exp` claim."""
     header = base64.urlsafe_b64encode(b'{"alg":"none"}').rstrip(b"=").decode()
     payload_obj = {"exp": int(time.time()) + exp_seconds_from_now}
     if scopes is not None:
         payload_obj["scp"] = scopes
+    if scope is not None:
+        payload_obj["scope"] = scope
     payload = base64.urlsafe_b64encode(
         json.dumps(payload_obj).encode()
     ).rstrip(b"=").decode()
@@ -327,6 +334,42 @@ def test_openai_jwt_without_model_request_scope_raises_actionable_error(tmp_path
 
     with pytest.raises(OpenAIOAuthError, match="model.request"):
         load_openai_credentials()
+
+
+@pytest.mark.unit
+def test_openai_jwt_scope_string_without_model_request_raises_actionable_error(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.delenv("CODEX_AUTH_FILE", raising=False)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex"))
+    _write_codex_creds(
+        tmp_path,
+        access_token=_make_jwt(
+            3600,
+            scope="openid profile email offline_access",
+        ),
+    )
+
+    with pytest.raises(OpenAIOAuthError, match="model.request"):
+        load_openai_credentials()
+
+
+@pytest.mark.unit
+def test_openai_jwt_scope_string_with_model_request_is_accepted(tmp_path, monkeypatch):
+    monkeypatch.delenv("CODEX_AUTH_FILE", raising=False)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex"))
+    _write_codex_creds(
+        tmp_path,
+        access_token=_make_jwt(
+            3600,
+            scope="openid profile model.request offline_access",
+        ),
+    )
+
+    creds = load_openai_credentials()
+
+    assert creds.access_token
 
 
 @pytest.mark.unit
@@ -727,6 +770,46 @@ def test_anthropic_invoke_retries_rate_limit_once(monkeypatch):
 
     assert response.content == "ok"
     assert len(calls) == 2
+
+
+@pytest.mark.unit
+def test_anthropic_ainvoke_retries_rate_limit_once(monkeypatch):
+    from langchain_anthropic import ChatAnthropic
+    from langchain_core.messages import AIMessage
+
+    calls = []
+
+    async def flaky_ainvoke(self, input, config=None, **kwargs):
+        calls.append(input)
+        if len(calls) == 1:
+            exc = RuntimeError("rate_limit_error")
+            exc.status_code = 429
+            raise exc
+        return AIMessage(content="ok")
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-real")
+    monkeypatch.setenv("ANTHROPIC_RATE_LIMIT_RETRY_SECONDS", "0")
+    monkeypatch.setattr(ChatAnthropic, "ainvoke", flaky_ainvoke)
+
+    llm = NormalizedChatAnthropic(model="claude-sonnet-4-5", max_tokens=4096)
+    response = asyncio.run(llm.ainvoke("hello"))
+
+    assert response.content == "ok"
+    assert len(calls) == 2
+
+
+@pytest.mark.unit
+def test_anthropic_invalid_retry_delay_logs_warning(monkeypatch, caplog):
+    from tradingagents.llm_clients import anthropic_client
+
+    monkeypatch.setenv("ANTHROPIC_RATE_LIMIT_RETRY_SECONDS", "abc,0,xyz")
+    caplog.set_level("WARNING", logger="tradingagents.llm_clients.anthropic_client")
+
+    delays = anthropic_client._rate_limit_retry_delays()
+
+    assert delays == (0.0,)
+    assert "ignoring unparseable retry delay 'abc'" in caplog.text
+    assert "ignoring unparseable retry delay 'xyz'" in caplog.text
 
 
 @pytest.mark.unit

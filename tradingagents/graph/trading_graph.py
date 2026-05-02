@@ -149,6 +149,13 @@ class TradingAgentsGraph:
             if reasoning_effort:
                 kwargs["reasoning_effort"] = reasoning_effort
 
+        elif provider == "anthropic" and self.config.get("anthropic_effort"):
+            logger.warning(
+                "anthropic_effort is currently ignored because Anthropic model "
+                "support has not been confirmed; remove the setting or keep it "
+                "reserved for a future release."
+            )
+
         return kwargs
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:

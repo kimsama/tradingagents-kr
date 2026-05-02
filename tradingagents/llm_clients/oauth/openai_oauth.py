@@ -121,8 +121,14 @@ def _validate_model_request_scope(token: str, source_path: Path) -> None:
     payload = _decode_jwt_payload(token)
     if payload is None:
         return
-    scopes = payload.get("scp")
-    if not isinstance(scopes, list):
+    scopes = set()
+    scp = payload.get("scp")
+    if isinstance(scp, list):
+        scopes.update(str(scope) for scope in scp)
+    scope = payload.get("scope")
+    if isinstance(scope, str):
+        scopes.update(scope.split())
+    if not scopes:
         return
     if "model.request" in scopes:
         return

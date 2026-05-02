@@ -123,17 +123,90 @@ def _localize_rating_value(value: str) -> str:
     return _KOREAN_RATING_LABELS.get(value.strip().lower(), value)
 
 
+_KOREAN_BOLD_VALUE_LABELS = (
+    ("Recommendation", "추천 의견"),
+    ("Action", "거래 행동"),
+    ("Rating", "등급"),
+)
+
+_KOREAN_BOLD_TEXT_LABELS = (
+    ("Rationale", "근거"),
+    ("Strategic Actions", "전략적 조치"),
+    ("Reasoning", "판단 근거"),
+    ("Entry Price", "진입가"),
+    ("Stop Loss", "손절가"),
+    ("Position Sizing", "포지션 크기"),
+    ("Executive Summary", "핵심 요약"),
+    ("Investment Thesis", "투자 논지"),
+    ("Price Target", "목표가"),
+    ("Time Horizon", "투자 기간"),
+)
+
+_KOREAN_ROLE_LABELS = (
+    ("Bull Analyst", "강세 분석가"),
+    ("Bear Analyst", "약세 분석가"),
+    ("Aggressive Analyst", "공격적 분석가"),
+    ("Conservative Analyst", "보수적 분석가"),
+    ("Neutral Analyst", "중립 분석가"),
+)
+
+_KOREAN_MARKDOWN_LITERAL_REPLACEMENTS = (
+    ("# Trading Analysis Report:", "# 트레이딩 분석 보고서:"),
+    ("Generated:", "생성일:"),
+    ("## I. Analyst Team Reports", "## I. 애널리스트 팀 보고서"),
+    ("## II. Research Team Decision", "## II. 리서치 팀 결정"),
+    ("## III. Trading Team Plan", "## III. 트레이딩 팀 계획"),
+    ("## IV. Risk Management Team Decision", "## IV. 리스크 관리 팀 결정"),
+    ("## V. Portfolio Manager Decision", "## V. 포트폴리오 매니저 결정"),
+    ("### Market Analyst", "### 시장 분석가"),
+    ("### Social Analyst", "### 소셜 분석가"),
+    ("### News Analyst", "### 뉴스 분석가"),
+    ("### Fundamentals Analyst", "### 펀더멘털 분석가"),
+    ("### Bull Researcher", "### 강세 리서처"),
+    ("### Bear Researcher", "### 약세 리서처"),
+    ("### Research Manager", "### 리서치 매니저"),
+    ("### Trader", "### 트레이더"),
+    ("### Aggressive Analyst", "### 공격적 분석가"),
+    ("### Conservative Analyst", "### 보수적 분석가"),
+    ("### Neutral Analyst", "### 중립 분석가"),
+    ("### Portfolio Manager", "### 포트폴리오 매니저"),
+)
+
+_MARKDOWN_LOCALIZATIONS = {
+    "korean": {
+        "bold_value_labels": _KOREAN_BOLD_VALUE_LABELS,
+        "bold_text_labels": _KOREAN_BOLD_TEXT_LABELS,
+        "role_labels": _KOREAN_ROLE_LABELS,
+        "literal_replacements": _KOREAN_MARKDOWN_LITERAL_REPLACEMENTS,
+    }
+}
+
+
+def _markdown_localization_for(lang: str | None):
+    if is_korean_output_language(lang):
+        return _MARKDOWN_LOCALIZATIONS["korean"]
+    return None
+
+
 def _localize_bold_label_value(text: str, english_label: str, korean_label: str) -> str:
     pattern = re.compile(
-        rf"\*\*{re.escape(english_label)}\*\*:\s*"
+        rf"\*\*{re.escape(english_label)}:?\*\*\s*:?\s*"
         r"(Buy|Overweight|Hold|Underweight|Sell)\b",
         re.IGNORECASE,
     )
-    text = pattern.sub(
+    localized = pattern.sub(
         lambda match: f"**{korean_label}**: {_localize_rating_value(match.group(1))}",
         text,
     )
-    return text.replace(f"**{english_label}**:", f"**{korean_label}**:")
+    return _localize_bold_label(localized, english_label, korean_label)
+
+
+def _localize_bold_label(text: str, english_label: str, korean_label: str) -> str:
+    pattern = re.compile(
+        rf"\*\*{re.escape(english_label)}:?\*\*\s*:?",
+        re.IGNORECASE,
+    )
+    return pattern.sub(f"**{korean_label}**:", text)
 
 
 def localize_report_markdown(text: str, lang: str | None = None) -> str:
@@ -143,7 +216,8 @@ def localize_report_markdown(text: str, lang: str | None = None) -> str:
     depend on stable English schema labels. This function is only for final
     display/export markdown.
     """
-    if not text or not is_korean_output_language(lang):
+    localization = _markdown_localization_for(lang)
+    if not text or localization is None:
         return text
 
     localized = re.sub(
@@ -153,59 +227,18 @@ def localize_report_markdown(text: str, lang: str | None = None) -> str:
         flags=re.IGNORECASE,
     )
 
-    for english_label, korean_label in (
-        ("Recommendation", "추천 의견"),
-        ("Action", "거래 행동"),
-        ("Rating", "등급"),
-    ):
+    for english_label, korean_label in localization["bold_value_labels"]:
         localized = _localize_bold_label_value(
             localized, english_label, korean_label
         )
 
-    for english_label, korean_label in (
-        ("Rationale", "근거"),
-        ("Strategic Actions", "전략적 조치"),
-        ("Reasoning", "판단 근거"),
-        ("Entry Price", "진입가"),
-        ("Stop Loss", "손절가"),
-        ("Position Sizing", "포지션 크기"),
-        ("Executive Summary", "핵심 요약"),
-        ("Investment Thesis", "투자 논지"),
-        ("Price Target", "목표가"),
-        ("Time Horizon", "투자 기간"),
-    ):
-        localized = localized.replace(f"**{english_label}**:", f"**{korean_label}**:")
+    for english_label, korean_label in localization["bold_text_labels"]:
+        localized = _localize_bold_label(localized, english_label, korean_label)
 
-    for english_role, korean_role in (
-        ("Bull Analyst", "강세 분석가"),
-        ("Bear Analyst", "약세 분석가"),
-        ("Aggressive Analyst", "공격적 분석가"),
-        ("Conservative Analyst", "보수적 분석가"),
-        ("Neutral Analyst", "중립 분석가"),
-    ):
+    for english_role, korean_role in localization["role_labels"]:
         localized = localized.replace(f"{english_role}:", f"{korean_role}:")
 
-    for english_text, korean_text in (
-        ("# Trading Analysis Report:", "# 트레이딩 분석 보고서:"),
-        ("Generated:", "생성일:"),
-        ("## I. Analyst Team Reports", "## I. 애널리스트 팀 보고서"),
-        ("## II. Research Team Decision", "## II. 리서치 팀 결정"),
-        ("## III. Trading Team Plan", "## III. 트레이딩 팀 계획"),
-        ("## IV. Risk Management Team Decision", "## IV. 리스크 관리 팀 결정"),
-        ("## V. Portfolio Manager Decision", "## V. 포트폴리오 매니저 결정"),
-        ("### Market Analyst", "### 시장 분석가"),
-        ("### Social Analyst", "### 소셜 분석가"),
-        ("### News Analyst", "### 뉴스 분석가"),
-        ("### Fundamentals Analyst", "### 펀더멘털 분석가"),
-        ("### Bull Researcher", "### 강세 리서처"),
-        ("### Bear Researcher", "### 약세 리서처"),
-        ("### Research Manager", "### 리서치 매니저"),
-        ("### Trader", "### 트레이더"),
-        ("### Aggressive Analyst", "### 공격적 분석가"),
-        ("### Conservative Analyst", "### 보수적 분석가"),
-        ("### Neutral Analyst", "### 중립 분석가"),
-        ("### Portfolio Manager", "### 포트폴리오 매니저"),
-    ):
+    for english_text, korean_text in localization["literal_replacements"]:
         localized = localized.replace(english_text, korean_text)
 
     return localized

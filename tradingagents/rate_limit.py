@@ -16,6 +16,9 @@ def is_rate_limit_error(exc: BaseException) -> bool:
     if "ratelimit" in name or "rate_limit" in name:
         return True
 
+    # Last-resort fallback for non-SDK wrappers that preserve only message text.
+    # This can false-positive on benign messages containing "rate limit", so
+    # status code and exception class checks above remain the preferred signals.
     text = str(exc).lower()
     return "rate_limit" in text or "rate limit" in text
 

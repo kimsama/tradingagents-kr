@@ -248,6 +248,39 @@ def test_korean_complete_report_localizes_structured_markdown_labels(
 
 
 @pytest.mark.unit
+def test_korean_markdown_localizer_handles_schema_label_punctuation_variants():
+    source = (
+        "**Recommendation:** Buy\n\n"
+        "**Action:** Hold\n\n"
+        "**Rating**\n: Sell\n\n"
+        "**Rationale:** English rationale.\n\n"
+        "**Strategic Actions**\n: English actions."
+    )
+
+    localized = localize_report_markdown(source, "Korean")
+
+    assert "**추천 의견**: 매수" in localized
+    assert "**거래 행동**: 보유" in localized
+    assert "**등급**: 매도" in localized
+    assert "**근거**:" in localized
+    assert "**전략적 조치**:" in localized
+    assert "**Recommendation" not in localized
+    assert "**Action" not in localized
+    assert "**Rating" not in localized
+    assert "**Rationale" not in localized
+    assert "**Strategic Actions" not in localized
+
+
+@pytest.mark.unit
+def test_korean_markdown_localizer_keeps_unknown_rating_value_but_localizes_label():
+    source = "**Recommendation**: Accumulate"
+
+    localized = localize_report_markdown(source, "Korean")
+
+    assert localized == "**추천 의견**: Accumulate"
+
+
+@pytest.mark.unit
 def test_korean_markdown_localizer_handles_legacy_complete_report_labels():
     legacy = (
         "# Trading Analysis Report: MSFT\n\n"

@@ -24,6 +24,14 @@ def test_debate_routing_after_korean_bull_response_goes_to_bear():
     assert route == "Bear Researcher"
 
 
+def test_debate_routing_at_count_zero_starts_with_bull():
+    logic = ConditionalLogic(max_debate_rounds=2)
+
+    route = logic.should_continue_debate(_state(count=0, current_response=""))
+
+    assert route == "Bull Researcher"
+
+
 def test_debate_routing_after_bear_response_goes_to_bull_before_limit():
     logic = ConditionalLogic(max_debate_rounds=2)
 

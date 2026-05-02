@@ -1,3 +1,4 @@
+import asyncio
 from functools import cached_property
 import logging
 import os
@@ -35,10 +36,20 @@ def _rate_limit_retry_delays() -> tuple[float, ...]:
         try:
             delay = float(item)
         except ValueError:
+            logger.warning("ignoring unparseable retry delay '%s'", item)
             continue
-        if delay >= 0:
-            delays.append(delay)
+        if delay < 0:
+            logger.warning("ignoring negative retry delay '%s'", item)
+            continue
+        delays.append(delay)
     return tuple(delays)
+
+
+def _retry_delay_seconds(exc: BaseException, delays: tuple[float, ...], attempt: int) -> float:
+    delay = retry_after_seconds(exc)
+    if delay is None:
+        delay = delays[attempt]
+    return min(delay, 300.0)
 
 
 class NormalizedChatAnthropic(ChatAnthropic):
@@ -68,10 +79,7 @@ class NormalizedChatAnthropic(ChatAnthropic):
                 if not is_rate_limit_error(exc) or attempt >= len(delays):
                     raise
 
-                delay = retry_after_seconds(exc)
-                if delay is None:
-                    delay = delays[attempt]
-                delay = min(delay, 300.0)
+                delay = _retry_delay_seconds(exc, delays, attempt)
                 logger.warning(
                     "Anthropic rate limit encountered; retrying in %.1fs (%d/%d)",
                     delay,
@@ -81,6 +89,26 @@ class NormalizedChatAnthropic(ChatAnthropic):
                 time.sleep(delay)
 
         raise RuntimeError("unreachable Anthropic retry state")
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        delays = _rate_limit_retry_delays()
+        for attempt in range(len(delays) + 1):
+            try:
+                return normalize_content(await super().ainvoke(input, config, **kwargs))
+            except Exception as exc:
+                if not is_rate_limit_error(exc) or attempt >= len(delays):
+                    raise
+
+                delay = _retry_delay_seconds(exc, delays, attempt)
+                logger.warning(
+                    "Anthropic rate limit encountered; retrying in %.1fs (%d/%d)",
+                    delay,
+                    attempt + 1,
+                    len(delays),
+                )
+                await asyncio.sleep(delay)
+
+        raise RuntimeError("unreachable Anthropic async retry state")
 
     def _get_client_params(self) -> dict[str, Any]:
         client_params = getattr(self, "_client_params", None)
